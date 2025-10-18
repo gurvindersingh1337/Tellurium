@@ -2,407 +2,163 @@ package vestige.module.impl.visual;
 
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
-import net.minecraft.entity.monster.EntityMob;
-import net.minecraft.entity.passive.EntityAnimal;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.util.StringUtils;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.tileentity.TileEntityChest;
+import net.minecraft.tileentity.TileEntityEnderChest;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.util.vector.Vector4f;
-import vestige.Vestige;
 import vestige.event.Listener;
 import vestige.event.impl.RenderEvent;
-import vestige.font.VestigeFontRenderer;
 import vestige.module.Category;
 import vestige.module.Module;
 import vestige.setting.impl.BooleanSetting;
-import vestige.setting.impl.DoubleSetting;
 import vestige.setting.impl.IntegerSetting;
-import vestige.setting.impl.ModeSetting;
-import vestige.util.render.RenderUtil;
 
 import java.awt.*;
-import java.text.DecimalFormat;
-import java.text.NumberFormat;
 import java.util.HashMap;
 import java.util.Map;
 
 public class ESP extends Module {
 
     private final BooleanSetting players = new BooleanSetting("Players", true);
-    private final BooleanSetting animals = new BooleanSetting("Animals", false);
-    private final BooleanSetting mobs = new BooleanSetting("Mobs", false);
+    private final BooleanSetting chests = new BooleanSetting("Chests", false);
+    private final BooleanSetting filled = new BooleanSetting("Filled", false);
+    
+    private final IntegerSetting playerColorR = new IntegerSetting("Player Red", 0, 0, 255, 1);
+    private final IntegerSetting playerColorG = new IntegerSetting("Player Green", 255, 0, 255, 1);
+    private final IntegerSetting playerColorB = new IntegerSetting("Player Blue", 255, 0, 255, 1);
+    
+    private final IntegerSetting chestColorR = new IntegerSetting("Chest Red", 255, 0, 255, 1);
+    private final IntegerSetting chestColorG = new IntegerSetting("Chest Green", 140, 0, 255, 1);
+    private final IntegerSetting chestColorB = new IntegerSetting("Chest Blue", 0, 0, 255, 1);
 
-    private final BooleanSetting mcfont = new BooleanSetting("Minecraft Font", false);
-    private final BooleanSetting boxEsp = new BooleanSetting("Box", true);
-    private final ModeSetting boxColorMode = new ModeSetting("Box Mode", "Custom", "Custom", "Client");
-    private final IntegerSetting boxColorR = new IntegerSetting("Box Red", 0, 0, 255, 1);
-    private final IntegerSetting boxColorG = new IntegerSetting("Box Green", 255, 0, 255, 1);
-    private final IntegerSetting boxColorB = new IntegerSetting("Box Blue", 255, 0, 255, 1);
-
-    private final BooleanSetting itemHeld = new BooleanSetting("Item Held", true);
-    private final BooleanSetting equipment = new BooleanSetting("Equipment", true);
-    private final BooleanSetting healthBar = new BooleanSetting("Health Bar", true);
-    private final ModeSetting healthBarMode = new ModeSetting("Health Mode", "Color", "Health", "Color");
-    private final BooleanSetting healthBarText = new BooleanSetting("Health Text", true);
-
-    private final BooleanSetting nametags = new BooleanSetting("Nametags", true);
-    private final DoubleSetting scale = new DoubleSetting("Tag Scale", 0.75, 0.35, 1.0, 0.05);
-    private final BooleanSetting healthText = new BooleanSetting("Health Tag", true);
-    private final BooleanSetting background = new BooleanSetting("Background", true);
-    private final BooleanSetting rounded = new BooleanSetting("Rounded", true);
-
-    private final Map<Entity, Vector4f> entityPosition = new HashMap<>();
-    private final NumberFormat df = new DecimalFormat("0.#");
-    private final Color backgroundColor = new Color(10, 10, 10, 130);
-
-    private Color firstColor = Color.CYAN;
-    private Color secondColor = Color.CYAN;
-    private Color thirdColor = Color.CYAN;
-    private Color fourthColor = Color.CYAN;
-
-    private VestigeFontRenderer font;
+    private final Map<Object, Vector4f> entityPosition = new HashMap<>();
 
     public ESP() {
         super("ESP", Category.VISUAL);
-        addSettings(players, animals, mobs, mcfont, boxEsp, boxColorMode, boxColorR, boxColorG, boxColorB,
-                itemHeld, equipment, healthBar, healthBarMode, healthBarText,
-                nametags, scale, healthText, background, rounded);
-    }
-
-    @Override
-    public void onClientStarted() {
-        font = Vestige.instance.getFontManager().getComfortaa();
+        addSettings(players, chests, filled, playerColorR, playerColorG, playerColorB, 
+                   chestColorR, chestColorG, chestColorB);
     }
 
     @Listener
     public void onRender(RenderEvent event) {
         if (mc.thePlayer == null || mc.theWorld == null) return;
-
+        
         entityPosition.clear();
-
-        for (Entity entity : mc.theWorld.loadedEntityList) {
-            if (shouldRender(entity) && isInView(entity)) {
-                Vector4f pos = getEntityPositionsOn2D(entity);
-                if (pos != null) {
-                    entityPosition.put(entity, pos);
+        
+        if (players.isEnabled()) {
+            for (Entity entity : mc.theWorld.loadedEntityList) {
+                if (shouldRenderEntity(entity) && isInView(entity)) {
+                    Vector4f pos = getEntityPositionsOn2D(entity);
+                    if (pos != null) {
+                        entityPosition.put(entity, pos);
+                    }
                 }
             }
         }
-
-        updateColors();
+        
+        if (chests.isEnabled()) {
+            for (TileEntity tile : mc.theWorld.loadedTileEntityList) {
+                if (shouldRenderChest(tile)) {
+                    Vector4f pos = getChestPositionsOn2D(tile);
+                    if (pos != null) {
+                        entityPosition.put(tile, pos);
+                    }
+                }
+            }
+        }
+        
         renderESP();
     }
 
-    private void updateColors() {
-        if (boxColorMode.is("Custom")) {
-            Color baseColor = new Color(boxColorR.getValue(), boxColorG.getValue(), boxColorB.getValue());
-            firstColor = baseColor;
-            secondColor = baseColor;
-            thirdColor = baseColor;
-            fourthColor = baseColor;
-        } else {
-            long time = System.currentTimeMillis();
-            firstColor = getColorFromTime(time, 0);
-            secondColor = getColorFromTime(time, 90);
-            thirdColor = getColorFromTime(time, 180);
-            fourthColor = getColorFromTime(time, 270);
-        }
-    }
-
-    private Color getColorFromTime(long time, int offset) {
-        float hue = ((time + offset * 10) % 2000) / 2000.0f;
-        return Color.getHSBColor(hue, 0.8f, 1.0f);
-    }
-
     private void renderESP() {
-        for (Entity entity : entityPosition.keySet()) {
-            Vector4f pos = entityPosition.get(entity);
+        for (Object obj : entityPosition.keySet()) {
+            Vector4f pos = entityPosition.get(obj);
             float x = pos.getX();
             float y = pos.getY();
             float right = pos.getZ();
             float bottom = pos.getW();
-
-            if (entity instanceof EntityLivingBase) {
-                EntityLivingBase living = (EntityLivingBase) entity;
-
-                if (nametags.isEnabled()) {
-                    renderNametag(living, x, y, right, bottom);
-                }
-
-                if (itemHeld.isEnabled() && living.getHeldItem() != null) {
-                    renderHeldItem(living, x, right, bottom);
-                }
-
-                if (equipment.isEnabled()) {
-                    renderEquipment(living, x, y, right, bottom);
-                }
-
-                if (healthBar.isEnabled()) {
-                    renderHealthBar(living, x, y, bottom);
-                }
+            
+            Color color;
+            if (obj instanceof EntityPlayer) {
+                color = new Color(playerColorR.getValue(), playerColorG.getValue(), playerColorB.getValue());
+            } else {
+                color = new Color(chestColorR.getValue(), chestColorG.getValue(), chestColorB.getValue());
             }
-
-            if (boxEsp.isEnabled()) {
-                renderBox(x, y, right, bottom);
-            }
+            
+            renderBox(x, y, right, bottom, color);
         }
     }
 
-    private void renderNametag(EntityLivingBase entity, float x, float y, float right, float bottom) {
-        float healthValue = entity.getHealth() / entity.getMaxHealth();
-        Color healthColor = healthValue > 0.75f ? new Color(66, 246, 123) :
-                healthValue > 0.5f ? new Color(228, 255, 105) :
-                        healthValue > 0.35f ? new Color(236, 100, 64) :
-                                new Color(255, 65, 68);
-
-        String name = StringUtils.stripControlCodes(entity.getDisplayName().getUnformattedText());
-        StringBuilder text = new StringBuilder("§f" + name);
-
-        if (healthText.isEnabled()) {
-            text.append(String.format(" §7[§r%s HP§7]", df.format(entity.getHealth())));
+    private void renderBox(float x, float y, float right, float bottom, Color color) {
+        float lineWidth = 2.0f;
+        
+        if (filled.isEnabled()) {
+            Gui.drawRect((int)x, (int)y, (int)right, (int)bottom, 
+                       new Color(color.getRed(), color.getGreen(), color.getBlue(), 50).getRGB());
         }
-
-        float fontScale = (float)scale.getValue();
-        float middle = x + ((right - x) / 2);
-        float textWidth;
-        float fontHeight;
-
-        if (mcfont.isEnabled()) {
-            textWidth = (float)mc.fontRendererObj.getStringWidth(text.toString());
-            middle -= (textWidth * fontScale) / 2f;
-            fontHeight = (float)mc.fontRendererObj.FONT_HEIGHT * fontScale;
-        } else {
-            textWidth = (float)font.getStringWidth(text.toString());
-            middle -= (textWidth * fontScale) / 2f;
-            fontHeight = font.getHeight() * fontScale;
-        }
-
+        
         GL11.glPushMatrix();
-        GL11.glTranslatef(middle, y - (fontHeight + 2), 0);
-        GL11.glScalef(fontScale, fontScale, 1);
-        GL11.glTranslatef(-middle, -(y - (fontHeight + 2)), 0);
-
-        if (background.isEnabled()) {
-            if (rounded.isEnabled()) {
-                RenderUtil.drawRoundedRect(middle - 3, y - (fontHeight + 7), textWidth + 6,
-                        (fontHeight / fontScale) + 4, 4f, backgroundColor.getRGB());
-            } else {
-                Gui.drawRect((int)(middle - 3), (int)(y - (fontHeight + 7)),
-                        (int)(middle + textWidth + 3), (int)(y - (fontHeight + 7) + (fontHeight / fontScale) + 4),
-                        backgroundColor.getRGB());
-            }
-        }
-
-        if (mcfont.isEnabled()) {
-            mc.fontRendererObj.drawString(StringUtils.stripControlCodes(text.toString()),
-                    middle + 0.5f, y - (fontHeight + 4) + 0.5f, Color.BLACK.getRGB());
-            mc.fontRendererObj.drawString(text.toString(), middle, y - (fontHeight + 4), healthColor.getRGB());
-        } else {
-            font.drawStringWithShadow(text.toString(), middle, y - (fontHeight + 5), healthColor.getRGB());
-        }
-
-        GL11.glPopMatrix();
-    }
-
-    private void renderHeldItem(EntityLivingBase entity, float x, float right, float bottom) {
-        float fontScale = 0.5f;
-        float middle = x + ((right - x) / 2);
-        String text = entity.getHeldItem().getDisplayName();
-        float textWidth;
-        float fontHeightForRect;
-
-        if (mcfont.isEnabled()) {
-            textWidth = (float)mc.fontRendererObj.getStringWidth(text);
-            fontHeightForRect = (float)mc.fontRendererObj.FONT_HEIGHT;
-        } else {
-            textWidth = (float)font.getStringWidth(text);
-            fontHeightForRect = (float)font.getHeight();
-        }
-
-        middle -= (textWidth * fontScale) / 2f;
-
-        float bottomCalc = bottom + 1f + fontHeightForRect + 5f;
-
-        GL11.glPushMatrix();
-        GL11.glTranslatef(middle, bottom + 4f, 0);
-        GL11.glScalef(fontScale, fontScale, 1);
-        GL11.glTranslatef(-middle, -(bottom + 4f), 0);
-
-        Gui.drawRect((int)(middle - 3), (int)(bottom + 1f),
-                (int)(middle + textWidth + 3), (int)bottomCalc,
-                backgroundColor.getRGB());
-
-        if (mcfont.isEnabled()) {
-            mc.fontRendererObj.drawStringWithShadow(text, middle, bottom + 4f, -1);
-        } else {
-            font.drawStringWithShadow(text, middle, bottom + 4f, -1);
-        }
-
-        GL11.glPopMatrix();
-    }
-
-    private void renderEquipment(EntityLivingBase entity, float x, float y, float right, float bottom) {
-        float scale = 0.4f;
-        float equipmentX = right + 5;
-        float equipmentY = y - 1;
-
-        GL11.glPushMatrix();
-        GL11.glTranslatef(equipmentX, equipmentY, 0);
-        GL11.glScalef(scale, scale, 1);
-        GL11.glTranslatef(-equipmentX, -y, 0);
-
-        RenderHelper.enableGUIStandardItemLighting();
-        float separation = 0f;
-        float length = (bottom - y) - 2;
-
-        for (int i = 3; i >= 0; i--) {
-            if (entity.getCurrentArmor(i) != null) {
-                mc.getRenderItem().renderItemAndEffectIntoGUI(entity.getCurrentArmor(i),
-                        (int)equipmentX, (int)(equipmentY + separation));
-            }
-            separation += (length / 3) / scale;
-        }
-
-        RenderHelper.disableStandardItemLighting();
-        GL11.glPopMatrix();
-    }
-
-    private void renderHealthBar(EntityLivingBase entity, float x, float y, float bottom) {
-        float healthValue = entity.getHealth() / entity.getMaxHealth();
-        Color healthColor = healthValue > 0.75f ? new Color(66, 246, 123) :
-                healthValue > 0.5f ? new Color(228, 255, 105) :
-                        healthValue > 0.35f ? new Color(236, 100, 64) :
-                                new Color(255, 65, 68);
-
-        float height = (bottom - y) + 1f;
-        Gui.drawRect((int)(x - 3.5f), (int)(y - 0.5f), (int)(x - 1.5f), (int)(bottom + 0.5f),
-                new Color(0, 0, 0, 180).getRGB());
-
-        if (healthBarMode.is("Color")) {
-            float yOffset = y + (height - (height * healthValue));
-            float heightValue = height * healthValue;
-            drawGradient(x - 3f, y, 1f, height, 0.3f, firstColor, fourthColor);
-            drawGradient(x - 3f, yOffset, 1f, heightValue, 1f, firstColor, fourthColor);
-        } else {
-            Gui.drawRect((int)(x - 3f), (int)y, (int)(x - 2f), (int)(y + height),
-                    new Color(healthColor.getRed(), healthColor.getGreen(), healthColor.getBlue(), 76).getRGB());
-            Gui.drawRect((int)(x - 3f), (int)(y + (height - (height * healthValue))),
-                    (int)(x - 2f), (int)(y + height), healthColor.getRGB());
-        }
-
-        if (healthBarText.isEnabled()) {
-            healthValue *= 100;
-            String health;
-            if (healthValue >= 99.5f) {
-                health = "100";
-            } else {
-                health = String.format("%.0f", healthValue);
-            }
-            String text = health + "%";
-            float fontScale = 0.5f;
-            float textX;
-            float fontHeight;
-
-            if (mcfont.isEnabled()) {
-                textX = x - (((float)mc.fontRendererObj.getStringWidth(text) / 2f) + 2);
-                fontHeight = (float)mc.fontRendererObj.FONT_HEIGHT * fontScale;
-            } else {
-                textX = x - (((float)font.getStringWidth(text) / 2f) + 2);
-                fontHeight = font.getHeight() * fontScale;
-            }
-
-            float newHeight = height - fontHeight;
-            float textY = y + (newHeight - (newHeight * (healthValue / 100)));
-
-            GL11.glPushMatrix();
-            GL11.glTranslatef(textX - 5f, textY, 1f);
-            GL11.glScalef(fontScale, fontScale, 1f);
-            GL11.glTranslatef(-(textX - 5f), -textY, 1f);
-
-            if (mcfont.isEnabled()) {
-                mc.fontRendererObj.drawStringWithShadow(text, textX, textY, -1);
-            } else {
-                font.drawStringWithShadow(text, textX, textY, -1);
-            }
-
-            GL11.glPopMatrix();
-        }
-    }
-
-    private void renderBox(float x, float y, float right, float bottom) {
-        float outlineThickness = 0.5f;
-
-        drawGradientLR(x, y, right - x, 1, 1, firstColor, secondColor);
-        drawGradient(x, y, 1, bottom - y, 1, firstColor, fourthColor);
-        drawGradientLR(x, bottom, right - x, 1, 1, fourthColor, thirdColor);
-        drawGradient(right, y, 1, (bottom - y) + 1, 1, secondColor, thirdColor);
-
-        Gui.drawRect((int)(x - 0.5f), (int)(y - outlineThickness), (int)(right + 1.5f), (int)y, Color.BLACK.getRGB());
-        Gui.drawRect((int)(x - outlineThickness), (int)y, (int)x, (int)(bottom + 1), Color.BLACK.getRGB());
-        Gui.drawRect((int)(x - 0.5f), (int)(bottom + 1), (int)(right + 1.5f), (int)(bottom + 1 + outlineThickness), Color.BLACK.getRGB());
-        Gui.drawRect((int)(right + 1), (int)y, (int)(right + 1 + outlineThickness), (int)(bottom + 1), Color.BLACK.getRGB());
-
-        Gui.drawRect((int)(x + 1), (int)(y + 1), (int)right, (int)(y + 1 + outlineThickness), Color.BLACK.getRGB());
-        Gui.drawRect((int)(x + 1), (int)(y + 1), (int)(x + 1 + outlineThickness), (int)bottom, Color.BLACK.getRGB());
-        Gui.drawRect((int)(x + 1), (int)(bottom - outlineThickness), (int)right, (int)bottom, Color.BLACK.getRGB());
-        Gui.drawRect((int)(right - outlineThickness), (int)(y + 1), (int)right, (int)bottom, Color.BLACK.getRGB());
-    }
-
-    private void drawGradient(float x, float y, float width, float height, float alpha, Color top, Color bottom) {
-        GlStateManager.disableTexture2D();
-        GlStateManager.enableBlend();
-        GL11.glShadeModel(GL11.GL_SMOOTH);
-        GL11.glBegin(GL11.GL_QUADS);
-        GL11.glColor4f(top.getRed() / 255f, top.getGreen() / 255f, top.getBlue() / 255f, alpha);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GL11.glLineWidth(lineWidth);
+        GL11.glColor4f(color.getRed() / 255f, color.getGreen() / 255f, color.getBlue() / 255f, 1.0f);
+        
+        GL11.glBegin(GL11.GL_LINE_LOOP);
         GL11.glVertex2f(x, y);
-        GL11.glVertex2f(x + width, y);
-        GL11.glColor4f(bottom.getRed() / 255f, bottom.getGreen() / 255f, bottom.getBlue() / 255f, alpha);
-        GL11.glVertex2f(x + width, y + height);
-        GL11.glVertex2f(x, y + height);
+        GL11.glVertex2f(right, y);
+        GL11.glVertex2f(right, bottom);
+        GL11.glVertex2f(x, bottom);
         GL11.glEnd();
-        GL11.glShadeModel(GL11.GL_FLAT);
-        GlStateManager.enableTexture2D();
-        GlStateManager.disableBlend();
-    }
-
-    private void drawGradientLR(float x, float y, float width, float height, float alpha, Color left, Color right) {
-        GlStateManager.disableTexture2D();
-        GlStateManager.enableBlend();
-        GL11.glShadeModel(GL11.GL_SMOOTH);
-        GL11.glBegin(GL11.GL_QUADS);
-        GL11.glColor4f(left.getRed() / 255f, left.getGreen() / 255f, left.getBlue() / 255f, alpha);
-        GL11.glVertex2f(x, y);
-        GL11.glVertex2f(x, y + height);
-        GL11.glColor4f(right.getRed() / 255f, right.getGreen() / 255f, right.getBlue() / 255f, alpha);
-        GL11.glVertex2f(x + width, y + height);
-        GL11.glVertex2f(x + width, y);
-        GL11.glEnd();
-        GL11.glShadeModel(GL11.GL_FLAT);
-        GlStateManager.enableTexture2D();
-        GlStateManager.disableBlend();
+        
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+        GL11.glDisable(GL11.GL_BLEND);
+        GL11.glPopMatrix();
     }
 
     private Vector4f getEntityPositionsOn2D(Entity entity) {
         double x = entity.lastTickPosX + (entity.posX - entity.lastTickPosX) * mc.timer.renderPartialTicks - mc.getRenderManager().viewerPosX;
         double y = entity.lastTickPosY + (entity.posY - entity.lastTickPosY) * mc.timer.renderPartialTicks - mc.getRenderManager().viewerPosY;
         double z = entity.lastTickPosZ + (entity.posZ - entity.lastTickPosZ) * mc.timer.renderPartialTicks - mc.getRenderManager().viewerPosZ;
-
-        double width = entity.width / 2;
+        
+        double width = entity.width / 2.0;
         double height = entity.height + 0.1;
-
+        
         double[][] positions = {
-                {x - width, y, z - width}, {x + width, y, z - width},
-                {x - width, y, z + width}, {x + width, y, z + width},
-                {x - width, y + height, z - width}, {x + width, y + height, z - width},
-                {x - width, y + height, z + width}, {x + width, y + height, z + width}
+            {x - width, y, z - width}, {x + width, y, z - width},
+            {x - width, y, z + width}, {x + width, y, z + width},
+            {x - width, y + height, z - width}, {x + width, y + height, z - width},
+            {x - width, y + height, z + width}, {x + width, y + height, z + width}
         };
+        
+        return calculateScreenBounds(positions);
+    }
 
-        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
-        float maxX = -1, maxY = -1;
+    private Vector4f getChestPositionsOn2D(TileEntity chest) {
+        double x = chest.getPos().getX() - mc.getRenderManager().viewerPosX;
+        double y = chest.getPos().getY() - mc.getRenderManager().viewerPosY;
+        double z = chest.getPos().getZ() - mc.getRenderManager().viewerPosZ;
+        
+        double[][] positions = {
+            {x, y, z}, {x + 1, y, z},
+            {x, y, z + 1}, {x + 1, y, z + 1},
+            {x, y + 1, z}, {x + 1, y + 1, z},
+            {x, y + 1, z + 1}, {x + 1, y + 1, z + 1}
+        };
+        
+        return calculateScreenBounds(positions);
+    }
 
+    private Vector4f calculateScreenBounds(double[][] positions) {
+        float minX = Float.MAX_VALUE;
+        float minY = Float.MAX_VALUE;
+        float maxX = -1f;
+        float maxY = -1f;
+        
         for (double[] pos : positions) {
             float[] screenPos = worldToScreen(pos[0], pos[1], pos[2]);
             if (screenPos == null) return null;
@@ -411,7 +167,7 @@ public class ESP extends Module {
             maxX = Math.max(screenPos[0], maxX);
             maxY = Math.max(screenPos[1], maxY);
         }
-
+        
         return new Vector4f(minX, minY, maxX, maxY);
     }
 
@@ -420,13 +176,13 @@ public class ESP extends Module {
         java.nio.FloatBuffer modelview = org.lwjgl.BufferUtils.createFloatBuffer(16);
         java.nio.FloatBuffer projection = org.lwjgl.BufferUtils.createFloatBuffer(16);
         java.nio.FloatBuffer coords = org.lwjgl.BufferUtils.createFloatBuffer(3);
-
+        
         GL11.glGetInteger(GL11.GL_VIEWPORT, viewport);
         GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, modelview);
         GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, projection);
-
+        
         boolean result = org.lwjgl.util.glu.GLU.gluProject((float)x, (float)y, (float)z, modelview, projection, viewport, coords);
-
+        
         if (result) {
             return new float[]{coords.get(0), mc.displayHeight - coords.get(1)};
         }
@@ -435,22 +191,19 @@ public class ESP extends Module {
 
     private boolean isInView(Entity entity) {
         float[] screenPos = worldToScreen(
-                entity.posX - mc.getRenderManager().viewerPosX,
-                entity.posY - mc.getRenderManager().viewerPosY,
-                entity.posZ - mc.getRenderManager().viewerPosZ
+            entity.posX - mc.getRenderManager().viewerPosX,
+            entity.posY - mc.getRenderManager().viewerPosY,
+            entity.posZ - mc.getRenderManager().viewerPosZ
         );
         return screenPos != null;
     }
 
-    private boolean shouldRender(Entity entity) {
-        if (entity.isDead || entity.isInvisible() || entity == mc.thePlayer) return false;
+    private boolean shouldRenderEntity(Entity entity) {
+        if (entity.isDead || entity == mc.thePlayer) return false;
+        return entity instanceof EntityPlayer;
+    }
 
-        if (players.isEnabled() && entity instanceof EntityPlayer) {
-            return !entity.getDisplayName().getUnformattedText().contains("[NPC");
-        }
-        if (animals.isEnabled() && entity instanceof EntityAnimal) return true;
-        if (mobs.isEnabled() && entity instanceof EntityMob) return true;
-
-        return false;
+    private boolean shouldRenderChest(TileEntity tile) {
+        return tile instanceof TileEntityChest || tile instanceof TileEntityEnderChest;
     }
 }
