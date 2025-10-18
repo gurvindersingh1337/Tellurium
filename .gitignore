@@ -1,0 +1,6 @@
+# Project exclude paths
+/target/
+/.idea/
+/test_run/
+Vestige.iml
+Lycanis based.iml
